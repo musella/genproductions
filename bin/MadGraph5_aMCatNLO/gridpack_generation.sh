@@ -22,10 +22,10 @@
 
 ##########################################################################################
 #For runnning, the following command should be used                                      #
-#bash create_gridpack_template.sh NAME_OF_PRODCUTION QUEUE_SELECTION                     #
+#bash create_gridpack_template.sh NAME_OF_PRODCUTION QUEUE_SELECTION <PATCH_FILE>        #
 #Or you can make this script as an executable and the launch it with                     #
 #chmod +x create_gridpack_template.sh                                                    #
-#./create_gridpack_template.sh NAME_OF_PRODCUTION QUEUE_SELECTION                        #
+#./create_gridpack_template.sh NAME_OF_PRODCUTION QUEUE_SELECTION PATCH_FILE>            #
 #by NAME_OF_PRODUCTION you should use the names of run and proc card                     #
 #for example if the cards are bb_100_250_proc_card_mg5.dat and bb_100_250_run_card.dat   #
 #NAME_OF_PRODUCTION should be bb_100_250                                                 #
@@ -34,6 +34,7 @@
 ##########################################################################################
 
 #set -o verbose
+set -x
 
 echo "Starting job on " `date` #Only to display the starting of production date
 echo "Running on " `uname -a` #Only to display the machine where the job is running
@@ -46,6 +47,12 @@ name=${1}
 
 # which queue
 queue=$2
+
+# extra patch to apply
+patch=""
+if [[ -n $3 ]]; then
+    patch=$3
+fi
 
 #________________________________________
 # to be set for user spesific
@@ -125,7 +132,15 @@ if [ ! -d ${AFS_GEN_FOLDER}/${name}_gridpack ];then
 
   patch -l -p0 -i $PRODHOME/patches/mgfixes.patch
   patch -l -p0 -i $PRODHOME/patches/models.patch
-
+  if [[ -n $patch ]]; then 
+      patchfile=$PRODHOME/patches/$patch
+      if [[ ! -f $patchfile ]]; then
+	  echo "Could not find patch file"  $patchfile
+	  exit -1
+      fi
+      patch -l -p0 -i $patchfile
+  fi
+  
   cd $MGBASEDIRORIG
 
   LHAPDFCONFIG=`echo "$LHAPDF_DATA_PATH/../../bin/lhapdf-config"`
