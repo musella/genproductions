@@ -1,0 +1,8 @@
+## Submittig gridpac
+kinit -l 28d
+klist
+
+bsub -q 1nw -R 'rusage[mem=16000]' "cd $PWD; ./gridpack_generation.sh gamgam01j_5F_NLO_FXFX 1nd diphoton_cuts.patch"
+bsub -q 1nw -R 'rusage[mem=16000]' "cd $PWD; ./gridpack_generation.sh gamgam012j_NLO_FXFX 1nd diphoton_cuts.patch"
+bsub -q 1nw -R 'rusage[mem=16000]' "cd $PWD; ./gridpack_generation.sh gamgam012j_5F_NLO_FXFX 1nd diphoton_cuts.patch"
+

@@ -1,0 +1,195 @@
+=== modified file 'Template/NLO/Cards/run_card.dat'
+--- ../orig/MG5_aMC_v2_2_1/Template/NLO/Cards/run_card.dat	2014-09-11 05:33:30 +0000
++++ MG5_aMC_v2_2_1/Template/NLO/Cards/run_card.dat	2014-12-16 10:31:54 +0000
+@@ -143,6 +143,15 @@
+  1.0  = epsgamma  ! epsilon_gamma parameter of eq.(3.4) in hep-ph/9801442
+  .true.  = isoEM  ! isolate photons from EM energy (photons and leptons)
+ #***********************************************************************
++# di-photon cuts, cut leading and subleading photon pt                 *
++#                 and invariant masses. Cuts ingnored if 0             *
++#***********************************************************************
++    0 = mggmax    ! maximum di-photon invariant mass
++    0 = mggmin    ! mininum di-photon invariant mass
++    0 = ptlgmin   ! minimum pt for leading photon
++    0 = ptslgmin  ! minimum pt for subleading photon
++    0 = ptmgscl   ! scaling pt cuts: require pt(s)l/mgg*ptmgscl > pt(s)lgmin
++#***********************************************************************
+ # Maximal PDG code for quark to be considered a jet when applying cuts.*
+ # At least all massless quarks of the model should be included here.   *
+ #***********************************************************************
+
+=== modified file 'Template/NLO/Source/cuts.inc'
+--- ../orig/MG5_aMC_v2_2_1/Template/NLO/Source/cuts.inc	2014-04-17 12:06:34 +0000
++++ MG5_aMC_v2_2_1/Template/NLO/Source/cuts.inc	2014-12-16 10:31:37 +0000
+@@ -7,11 +7,13 @@
+      &     JETALGO,JETRADIUS,PTJ,ETAJ,
+      &     PTL,ETAL,DRLL,DRLL_SF,MLL,MLL_SF
+       REAL*8 PTGMIN,R0GAMMA,XN,EPSGAMMA,ETAGAMMA  ! photon cuts
++      REAL*8 PTLGMIN,PTSLGMIN,MGGMIN,MGGMAX,PTMGSCL ! di-photon cuts
+       LOGICAL ISOEM                           ! photon cuts
+       COMMON /TO_ISOGAMMA_CUTS/PTGMIN,R0GAMMA,XN,EPSGAMMA,ETAGAMMA
+       COMMON /TO_ISOGAMMA_EM/ISOEM
++      COMMON /TO_DIGAMMA/PTLGMIN,PTSLGMIN,MGGMIN,MGGMAX,PTMGSCL
+       integer maxjetflavor
+-      COMMON /to_min_max_cuts/maxjetflavor
++      COMMON /to_min_max_cuts/maxjetflavor      
+ C
+ C     SPECIAL CUTS (FOR MERGING)
+ C
+
+=== modified file 'Template/NLO/SubProcesses/cuts.f'
+--- ../orig/MG5_aMC_v2_2_1/Template/NLO/SubProcesses/cuts.f	2014-07-16 16:23:08 +0000
++++ MG5_aMC_v2_2_1/Template/NLO/SubProcesses/cuts.f	2014-12-16 10:30:52 +0000
+@@ -39,7 +39,7 @@
+       REAL*8 R2_04,invm2_04,pt_04,eta_04,pt,eta
+       external R2_04,invm2_04,pt_04,eta_04,pt,eta
+ c local integers
+-      integer i,j
++      integer i,j,x
+ c jet cluster algorithm
+       integer nQCD,NJET,JET(nexternal)
+       double precision pQCD(0:3,nexternal),PJET(0:3,nexternal)
+@@ -49,10 +49,12 @@
+ c Photon isolation
+       integer nph,nem,k,nin
+       double precision ptg,chi_gamma_iso,iso_getdrv40
+-      double precision Etsum(0:nexternal)
++      double precision mgg,ptlg,ptslg,elg,eslg,temp,temp2
+       real drlist(nexternal)
+       double precision pgamma(0:3,nexternal),pem(0:3,nexternal)
+       logical alliso
++c Di-photon selection
++      double precision Etsum(0:nexternal)
+ c Sort array of results: ismode>0 for real, isway=0 for ascending order
+       integer ismode,isway,izero,isorted(nexternal)
+       parameter (ismode=1)
+@@ -379,8 +381,76 @@
+ c$$$            endif
+ c$$$         endif
+ c$$$      enddo
+-c
++
++
++c Di-photon cuts
++      if (ptlgmin.ne.0d0 .or. ptslgmin.ne.0d0 .or. mggmin.ne.0d0 .or. mggmax.ne.0d0 ) then
++c         print *, 'nph is', nph
++         if(nph.lt.2) then 
++            passcuts_user=.false.
++            return
++         endif
++c         do i=1,nph
++c            temp=sqrt(pgamma(1,i)*pgamma(1,i)+pgamma(2,i)*pgamma(2,i))
++c            print *, i, 'pti is', temp
++c         enddo
++c sort photons
++         do i=1,nph-1            
++            do j=i+1,nph
++               temp=sqrt(pgamma(1,i)*pgamma(1,i)+pgamma(2,i)*pgamma(2,i))
++               temp2=sqrt(pgamma(1,j)*pgamma(1,j)+pgamma(2,j)*pgamma(2,j))
++               if(temp2.gt.temp) then
++                  do x=0,3
++                     temp=pgamma(x,i)
++                     pgamma(x,i)=pgamma(x,j)
++                     pgamma(x,j)=temp
++                  enddo
++               endif
++            enddo
++         enddo
++c invariant mass cut
++c         do i=1,nph
++c            temp=sqrt(pgamma(1,i)*pgamma(1,i)+pgamma(2,i)*pgamma(2,i))
++c            print *, i, 'pti is', temp
++c         enddo
++         temp=0d0
++         elg=0d0
++         eslg=0d0
++         do x=0,3
++            elg=elg+pgamma(x,1)*pgamma(x,1)
++            eslg=eslg+pgamma(x,2)*pgamma(x,2)
++            temp=temp+(pgamma(x,1)+pgamma(x,2))*(pgamma(x,1)+pgamma(x,2))
++         enddo
++         mgg=sqrt( elg+eslg+2d0*sqrt(elg*eslg) - temp )
++c         print *, 'mgg is', mgg
++         if (mggmin.ne.0d0 .and. mgg.lt.mggmin ) then
++            passcuts_user=.false.
++            return
++         endif
++         if (mggmax.ne.0d0 .and. mgg.ge.mggmax ) then
++            passcuts_user=.false.
++            return
++         endif
++c leading and subleading photon pt cuts
++         ptlg=sqrt(pgamma(1,1)*pgamma(1,1)+pgamma(2,1)*pgamma(2,1))
++         ptslg=sqrt(pgamma(1,2)*pgamma(1,2)+pgamma(2,2)*pgamma(2,2))
++c scaling cuts
++         if (ptmgscl.ne.0d0) then
++            ptlg=ptlg/mgg*ptmgscl
++            ptslg=ptslg/mgg*ptmgscl
++         endif        
++         if (ptlgmin.ne.0d0 .and. ptlg.lt.ptlgmin) then
++            passcuts_user=.false.
++            return
++         endif
++         if (ptslgmin.ne.0d0 .and. ptslg.lt.ptslgmin) then
++            passcuts_user=.false.
++            return
++         endif
++      endif
++
+       return
++
+       end
+ 
+ 
+
+=== modified file 'Template/NLO/SubProcesses/cuts.inc'
+--- ../orig/MG5_aMC_v2_2_1/Template/NLO/SubProcesses/cuts.inc	2014-04-17 12:06:34 +0000
++++ MG5_aMC_v2_2_1/Template/NLO/SubProcesses/cuts.inc	2014-12-16 10:29:40 +0000
+@@ -7,11 +7,13 @@
+      &     JETALGO,JETRADIUS,PTJ,ETAJ,
+      &     PTL,ETAL,DRLL,DRLL_SF,MLL,MLL_SF
+       REAL*8 PTGMIN,R0GAMMA,XN,EPSGAMMA,ETAGAMMA  ! photon cuts
++      REAL*8 PTLGMIN,PTSLGMIN,MGGMIN,MGGMAX,PTMGSCL ! di-photon cuts
+       LOGICAL ISOEM                           ! photon cuts
+       COMMON /TO_ISOGAMMA_CUTS/PTGMIN,R0GAMMA,XN,EPSGAMMA,ETAGAMMA
+       COMMON /TO_ISOGAMMA_EM/ISOEM
++      COMMON /TO_DIGAMMA/PTLGMIN,PTSLGMIN,MGGMIN,MGGMAX,PTMGSCL
+       integer maxjetflavor
+-      COMMON /to_min_max_cuts/maxjetflavor
++      COMMON /to_min_max_cuts/maxjetflavor      
+ C
+ C     SPECIAL CUTS (FOR MERGING)
+ C
+
+=== modified file 'madgraph/various/banner.py'
+--- ../orig/MG5_aMC_v2_2_1/madgraph/various/banner.py	2014-09-17 07:02:56 +0000
++++ MG5_aMC_v2_2_1/madgraph/various/banner.py	2014-12-16 10:29:09 +0000
+@@ -651,7 +651,13 @@
+             if float(self['draj']) > 0:
+                 logger.warning('draj cut discarded since photon isolation is used')
+                 self['draj'] = '0' 
+-    
++        # Di-photon cuts
++        self.add_line('mggmax',  'float', 0 )
++        self.add_line('mggmin',  'float', 0 )
++        self.add_line('ptlgmin', 'float', 0 )
++        self.add_line('ptslgmin', 'float', 0 )
++        self.add_line('ptmgscl',  'float', 0 )
++        
+         self.add_line('maxjetflavor', 'int', 4)
+         if int(self['maxjetflavor']) > 6:
+             raise InvalidRunCard, 'maxjetflavor should be lower than 5! (6 is partly supported)'
+@@ -991,6 +997,12 @@
+         self.add_line('xn', 'float', 1.0)
+         self.add_line('epsgamma', 'float', 1.0)
+         self.add_line('isoEM', 'bool', True)
++        # Di-photon cuts
++        self.add_line('mggmax',  'float', 0 )
++        self.add_line('mggmin',  'float', 0 )
++        self.add_line('ptlgmin', 'float', 0 )
++        self.add_line('ptslgmin', 'float', 0 )
++        self.add_line('ptmgscl',  'float', 0 )
+         #  Collider pdf
+         self.add_line('pdlabel','str','cteq6_m')
+         # check validity of the pdf set
+
